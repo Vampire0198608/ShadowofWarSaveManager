@@ -64,7 +64,9 @@ DLC_CAMPAIGNS = [
 # ---------------------------------------------------------------------
 
 def find_steam_path():
-    """Try the Windows registry first, then fall back to common install locations."""
+    """Try the Windows registry first, then fall back to common install locations
+    for both Windows and Linux (including Flatpak Steam, common on distros
+    like CachyOS)."""
     if os.name == "nt":
         try:
             import winreg
@@ -85,35 +87,79 @@ def find_steam_path():
         except ImportError:
             pass
 
-    guesses = []
-    for drive in ["C", "D", "E", "F"]:
-        guesses.append(Path(f"{drive}:/Program Files (x86)/Steam"))
-        guesses.append(Path(f"{drive}:/Program Files/Steam"))
-        guesses.append(Path(f"{drive}:/Steam"))
-        guesses.append(Path(f"{drive}:/SteamLibrary"))
+        guesses = []
+        for drive in ["C", "D", "E", "F"]:
+            guesses.append(Path(f"{drive}:/Program Files (x86)/Steam"))
+            guesses.append(Path(f"{drive}:/Program Files/Steam"))
+            guesses.append(Path(f"{drive}:/Steam"))
+            guesses.append(Path(f"{drive}:/SteamLibrary"))
+        for g in guesses:
+            if g.exists():
+                return g
+        return None
+
+    # Linux (native package, or Flatpak) — covers Arch/CachyOS-style installs.
+    home = Path.home()
+    guesses = [
+        home / ".steam" / "steam",
+        home / ".steam" / "root",
+        home / ".local" / "share" / "Steam",
+        home / ".var" / "app" / "com.valvesoftware.Steam" / ".local" / "share" / "Steam",
+        home / ".var" / "app" / "com.valvesoftware.Steam" / "data" / "Steam",
+    ]
     for g in guesses:
-        if g.exists():
+        if (g / "steamapps").exists() or (g / "userdata").exists():
             return g
     return None
 
 
+def find_steam_proton_save_dir():
+    """Locate the local (non-Cloud) save folder inside a game's Proton prefix,
+    for when Steam Cloud sync isn't used or hasn't run yet on this machine."""
+    steam_path = find_steam_path()
+    if not steam_path:
+        return None
+    candidate = (
+        steam_path
+        / "steamapps"
+        / "compatdata"
+        / STEAM_APP_ID
+        / "pfx"
+        / "drive_c"
+        / "users"
+        / "steamuser"
+        / "Documents"
+        / "My Games"
+        / "Shadow of War"
+    )
+    return candidate if candidate.exists() else None
+
+
 def find_steam_save_dirs():
-    results = []
+    candidates = []  # list of (kind, path)
+
     steam_path = find_steam_path()
     if steam_path:
         userdata = steam_path / "userdata"
         if userdata.exists():
-            matches = []
             for user_folder in userdata.iterdir():
                 candidate = user_folder / STEAM_APP_ID / "remote"
                 if candidate.exists():
-                    matches.append(candidate)
-            if len(matches) == 1:
-                results.append(("Steam", matches[0]))
-            else:
-                for i, candidate in enumerate(matches, start=1):
-                    results.append((f"Steam (account {i})", candidate))
-    return results
+                    candidates.append(("Cloud sync folder", candidate))
+
+    proton_dir = find_steam_proton_save_dir()
+    if proton_dir:
+        candidates.append(("Proton local files", proton_dir))
+
+    if not candidates:
+        return []
+    if len(candidates) == 1:
+        return [("Steam", candidates[0][1])]
+
+    # More than one match (e.g. multiple Steam accounts, or both a Cloud
+    # sync folder and a local Proton prefix) — label each so they're
+    # distinguishable in the dropdown.
+    return [(f"Steam ({kind})", path) for kind, path in candidates]
 
 
 def find_gog_save_dir():
@@ -787,7 +833,22 @@ class SaveManagerApp:
                 if not exe_path.exists():
                     messagebox.showerror("Not found", f"Executable not found:\n{exe_path}")
                     return
-                subprocess.Popen([str(exe_path)], cwd=str(exe_path.parent))
+
+                if os.name != "nt" and exe_path.suffix.lower() == ".exe":
+                    # A Windows .exe can't run directly on Linux/macOS — try Wine.
+                    wine_cmd = shutil.which("wine")
+                    if not wine_cmd:
+                        messagebox.showerror(
+                            "Wine not found",
+                            f"'{exe_path.name}' is a Windows program and needs Wine to run "
+                            "on this system, but no 'wine' command was found on your PATH.\n\n"
+                            "Install Wine (e.g. via your distro's package manager) and try again, "
+                            "or point 'Set custom .exe...' at a native Linux binary/launch script instead.",
+                        )
+                        return
+                    subprocess.Popen([wine_cmd, str(exe_path)], cwd=str(exe_path.parent))
+                else:
+                    subprocess.Popen([str(exe_path)], cwd=str(exe_path.parent))
             self.status_var.set(f"Launching via {label}...")
         except Exception as exc:
             messagebox.showerror("Couldn't launch game", f"Something went wrong launching the game:\n{exc}")
@@ -1032,9 +1093,36 @@ class SaveManagerApp:
             self._refresh_backups()
 
 
+def resource_path(filename):
+    """Resolve a bundled resource's path, whether running as a plain script
+    or as a PyInstaller-built exe (which extracts data files to sys._MEIPASS)."""
+    base_path = getattr(sys, "_MEIPASS", Path(__file__).resolve().parent)
+    return Path(base_path) / filename
+
+
 def main():
     APP_DIR.mkdir(parents=True, exist_ok=True)
     root = tk.Tk()
+
+    # iconbitmap() only understands .ico on Windows (on X11/Linux it expects
+    # the old XBM format instead), so use iconphoto() with a PNG everywhere else.
+    if os.name == "nt":
+        icon_path = resource_path("icon.ico")
+        if icon_path.exists():
+            try:
+                root.iconbitmap(default=str(icon_path))
+            except tk.TclError:
+                pass
+    else:
+        icon_path = resource_path("icon.png")
+        if icon_path.exists():
+            try:
+                icon_image = tk.PhotoImage(file=str(icon_path))
+                root.iconphoto(True, icon_image)
+                root._icon_image_ref = icon_image  # keep a reference alive
+            except tk.TclError:
+                pass
+
     app = SaveManagerApp(root)
     root.mainloop()
 

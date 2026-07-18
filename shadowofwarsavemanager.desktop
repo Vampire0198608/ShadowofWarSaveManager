@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Shadow of War Save Manager
+Comment=Backup, organize, and restore Shadow of War save files
+Exec=shadowofwarsavemanager
+Icon=shadowofwarsavemanager
+Terminal=false
+Categories=Game;Utility;
