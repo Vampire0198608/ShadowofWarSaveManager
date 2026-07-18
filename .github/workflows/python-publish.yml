@@ -6,7 +6,7 @@
 # separate terms of service, privacy policy, and support
 # documentation.
 
-name: Upload Python Package
+name: Shadow of War Save Manager
 
 on:
   release:
@@ -17,7 +17,7 @@ permissions:
 
 jobs:
   release-build:
-    runs-on: ubuntu-latest
+    runs-on: Arch OS, Cachy OS, Windows 11
 
     steps:
       - uses: actions/checkout@v4
