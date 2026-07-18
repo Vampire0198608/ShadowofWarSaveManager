@@ -190,3 +190,118 @@ blank slate (it will not touch your actual game save folder).
 - **(Linux) App menu entry doesn't appear right after installing:** Log out
   and back in, or restart your desktop panel — menu caches sometimes need a
   refresh to pick up new `.desktop` entries.
+---
+Build Instructions
+
+This covers how to build distributable packages from source:
+ShadowOfWarSaveManager_Setup.exe for Windows, and a .pkg.tar.zst for
+CachyOS/Arch. (This is for building the packages themselves — end users
+installing a package you've already built should use README.md instead.)
+
+Files you need, all in one folder:
+
+
+sow_save_manager_gui.py
+icon.ico and icon.png
+build_exe.bat (Windows)
+ShadowOfWarSaveManager.iss (Windows installer)
+PKGBUILD and shadowofwarsavemanager.desktop (CachyOS/Arch)
+
+
+
+Windows
+
+1. Prerequisites
+
+
+Python 3 — get it from python.org. The
+standard Windows installer already includes Tkinter, so no extra setup
+is needed there.
+Inno Setup (for step 3 below) — free, from
+jrsoftware.org/isdl.php. Any recent
+6.x version works.
+
+
+2. Build the .exe
+
+Double-click build_exe.bat. It will:
+
+
+Install PyInstaller (pip install pyinstaller)
+Bundle the script, plus icon.ico, into a single-file exe
+Output it to dist\ShadowOfWarSaveManager.exe
+
+
+3. Wrap it in an installer
+
+
+Open ShadowOfWarSaveManager.iss — double-clicking it opens the Inno
+Setup Compiler (installed in step 1).
+Press Ctrl+F9 (or Build → Compile).
+The finished installer appears at
+Output\ShadowOfWarSaveManager_Setup.exe.
+
+
+That installer is what you hand to other Windows users — running it gives
+them a Start Menu shortcut, an optional Desktop shortcut, and a proper
+uninstaller in "Add or Remove Programs".
+
+Notes
+
+
+SmartScreen will likely flag the freshly-built exe/installer the first
+time it's run on any machine, since it's unsigned. That's expected for a
+personal build, not a sign something's wrong.
+If you change sow_save_manager_gui.py or the icons, just re-run steps 2
+and 3 to get an updated installer — no need to touch the .iss file
+unless you're changing the app name/version.
+
+
+
+CachyOS / Arch
+
+1. Prerequisites
+
+bashsudo pacman -S --needed base-devel tk python
+
+base-devel provides makepkg itself; the rest are what the app needs to
+build and run.
+
+2. Build and install the package
+
+With PKGBUILD, sow_save_manager_gui.py, icon.png, icon.ico, and
+shadowofwarsavemanager.desktop all in the same folder:
+
+bashmakepkg -si
+
+
+-s installs any missing build dependencies automatically
+-i installs the resulting package on your own machine right after
+building it
+
+
+This internally creates a temporary Python virtual environment to install
+PyInstaller into (avoiding Arch's restriction on global pip install),
+builds the binary, then packages everything — binary, icon, and desktop
+menu entry — into a proper pacman package.
+
+3. Get the distributable file
+
+After makepkg finishes, the built package sits in that same folder as:
+
+shadowofwarsavemanager-1.0.0-1-x86_64.pkg.tar.zst
+
+That's the file to hand to other CachyOS/Arch users — they install it with
+sudo pacman -U shadowofwarsavemanager-1.0.0-1-x86_64.pkg.tar.zst.
+
+If you only want to build without installing it on your own machine, use
+makepkg -s instead (drop the -i).
+
+Notes
+
+
+If you bump the version, update pkgver (and reset pkgrel=1) at the
+top of PKGBUILD — the output filename changes to match.
+To rebuild cleanly after changes, remove the pkg/, src/, and any
+build-venv/ folders makepkg leaves behind first, or just run
+makepkg -sf to force a rebuild.
